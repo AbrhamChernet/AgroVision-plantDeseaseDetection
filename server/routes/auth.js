@@ -1,0 +1,141 @@
+const express = require('express');
+const router = express.Router();
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const auth = require('../middleware/auth');
+const { body, validationResult } = require('express-validator');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'agrovision_secret_key';
+
+// @route   POST api/auth/register
+// @desc    Register a new farmer account
+router.post(
+  '/register',
+  [
+    body('name', 'እባክዎ ሙሉ ስምዎን ያስገቡ።').notEmpty(),
+    body('phone', 'እባክዎ ትክክለኛ የኢትዮጵያ ስልክ ቁጥር ያስገቡ (+251...)።').matches(/^\+251[79]\d{8}$/),
+    body('password', 'የይለፍ ቃል ቢያንስ 6 ፊደላት መሆን አለበት።').isLength({ min: 6 })
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: errors.array()[0].msg });
+    }
+
+    const { name, phone, password, profilePhoto } = req.body;
+
+    try {
+      let user = await User.findOne({ phone });
+      if (user) {
+        return res.status(400).json({ message: 'በዚህ ስልክ ቁጥር ቀድሞ የተመዘገበ አካውንት አለ።' });
+      }
+
+      user = new User({
+        name,
+        phone,
+        passwordHash: password,
+        profilePhoto: profilePhoto || '',
+        role: 'user',
+        lastLogin: new Date()
+      });
+
+      await user.save();
+
+      const payload = { id: user._id, name: user.name, role: user.role };
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+
+      // Save token in HttpOnly Cookie
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: false, // Set to true in HTTPS production
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
+      res.status(201).json({
+        message: 'ምዝገባው በተሳካ ሁኔታ ተጠናቋል።',
+        user: { id: user._id, name: user.name, phone: user.phone, role: user.role }
+      });
+    } catch (err) {
+      console.error('Register error:', err.message);
+      res.status(500).json({ message: 'ምዝገባው አልተሳካም። እባክዎ እንደገና ይሞክሩ።' });
+    }
+  }
+);
+
+// @route   POST api/auth/login
+// @desc    Authenticate phone number + password, set HttpOnly token
+router.post(
+  '/login',
+  [
+    body('phone', 'እባክዎ ስልክ ቁጥር ያስገቡ።').notEmpty(),
+    body('password', 'እባክዎ የይለፍ ቃል ያስገቡ።').notEmpty()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: errors.array()[0].msg });
+    }
+
+    const { phone, password, rememberMe } = req.body;
+
+    try {
+      const user = await User.findOne({ phone });
+      if (!user) {
+        return res.status(400).json({ message: 'ስልክ ቁጥር ወይም የይለፍ ቃል አልተዛመደም።' });
+      }
+
+      const isMatch = await user.comparePassword(password);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'ስልክ ቁጥር ወይም የይለፍ ቃል አልተዛመደም።' });
+      }
+
+      user.lastLogin = new Date();
+      await user.save();
+
+      const payload = { id: user._id, name: user.name, role: user.role };
+      const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+
+      // Set cookie duration based on rememberMe option
+      const cookieAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000; // 30 days or 1 day
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: false, 
+        sameSite: 'lax',
+        maxAge: cookieAge
+      });
+
+      res.json({
+        message: 'እንኳን ደህና መጡ! መግባትዎ ተረጋግጧል።',
+        user: { id: user._id, name: user.name, phone: user.phone, role: user.role }
+      });
+    } catch (err) {
+      console.error('Login error:', err.message);
+      res.status(500).json({ message: 'መግባት አልተሳካም። እባክዎ እንደገና ይሞክሩ።' });
+    }
+  }
+);
+
+// @route   POST api/auth/logout
+// @desc    Clear auth token cookies
+router.post('/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'በተሳካ ሁኔታ ወጥተዋል።' });
+});
+
+// @route   GET api/auth/me
+// @desc    Check cookie and return current session user
+router.get('/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-passwordHash');
+    if (!user) {
+      return res.status(404).json({ message: 'ተጠቃሚው አልተገኘም።' });
+    }
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ message: 'የተጠቃሚ መረጃን ማውጣት አልተቻለም።' });
+  }
+});
+
+module.exports = router;

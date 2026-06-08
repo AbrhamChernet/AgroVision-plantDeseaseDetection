@@ -1,0 +1,763 @@
+AgroVision AI - Detailed Project Overview
+=========================================
+
+This document explains how the AgroVision AI project works from end to end, including frontend, backend, and machine learning components. It also describes the core data flows, runtime behavior, and how to run the full project locally.
+
+1. Project Architecture
+-----------------------
+
+AgroVision AI is a modular application with three main layers:
+
+1. Frontend - React + Vite application in `client/`
+2. Backend - Express server with MongoDB in `server/`
+3. ML microservice - Python FastAPI service in `ml_service/`
+
+Each layer has a distinct responsibility and communicates using HTTP requests.
+
+-----
+
+2. Frontend Overview (`client/`)
+--------------------------------
+
+Stack:
+- React 19
+- Vite 8
+- Tailwind CSS v4
+- React Router v7
+- Axios
+- Framer Motion
+- Headless UI
+- React Dropzone
+- React Hot Toast
+- Recharts
+
+Purpose:
+- Render the user interface.
+- Allow users to upload crop leaf images.
+- Present prediction results.
+- Manage authentication and profile state.
+- Show scan history and dashboard metrics.
+- Provide Amharic and English support.
+- Offer voice guidance via speech synthesis.
+
+Key code flows:
+
+- `client/src/App.jsx`
+  - Defines the router and page routes.
+  - Wraps the app with `LanguageProvider`, `AuthProvider`, and `AudioProvider`.
+  - Protects `/history` and `/dashboard` with authentication.
+
+- `client/src/utils/api.js`
+  - Creates an Axios instance with `baseURL` set to `http://localhost:5000/api` by default.
+  - Enables `withCredentials` for sending and receiving HttpOnly JWT cookies.
+  - Handles error responses and shows toast notifications when the backend responds with errors or rate-limited status.
+
+- `client/src/context/AuthContext.jsx`
+  - Manages authenticated user state.
+  - Loads the logged-in user from `/api/auth/me`.
+  - Exposes authentication state and actions to components.
+
+- `client/src/context/LanguageContext.jsx`
+  - Manages bilingual UI text.
+  - Enables switching between Amharic and English.
+
+- `client/src/context/AudioContext.jsx`
+  - Controls global audio narration state.
+  - Plays generated speech text for results and UI prompts.
+
+- `client/src/components/UploadZone.jsx`
+  - Accepts image uploads via drag-drop.
+  - Posts uploaded images and selected crop type to `/api/detect`.
+
+- `client/src/pages/Detect.jsx`
+  - Orchestrates the detection workflow.
+  - Submits image and crop type to backend.
+  - Displays returned prediction results and recommendations.
+
+- `client/src/pages/History.jsx` and `Dashboard.jsx`
+  - Call `/api/history` and `/api/history/stats`.
+  - Display saved scan history and aggregate statistics.
+
+The frontend uses standard SPA routing and provides an interactive experience on desktop and mobile.
+
+-----
+
+3. Backend Overview (`server/`)
+-------------------------------
+
+Stack:
+- Node.js
+- Express
+- MongoDB with Mongoose
+- JWT authentication
+- Bcrypt password hashing
+- Multer file uploads
+- Axios for backend-to-backend requests
+- Cookie handling
+- CORS support
+
+Purpose:
+- Serve API endpoints for authentication, detection, history, and diseases.
+- Accept image uploads and forward them to the ML service.
+- Save prediction records to MongoDB.
+- Protect sensitive routes with JWT authentication.
+- Provide fallback behavior when ML service is unavailable.
+
+Entrypoint:
+- `server/index.js`
+  - Loads environment variables from `.env`.
+  - Configures CORS to allow the Vite client at `http://localhost:5173`.
+  - Parses JSON and URL-encoded bodies.
+  - Parses cookies for JWT extraction.
+  - Serves static uploads from `/uploads`.
+  - Connects to MongoDB using `MONGO_URI` or `mongodb://localhost:27017/agrovision`.
+  - Mounts routes under `/api/auth`, `/api/detect`, `/api/history`, `/api/diseases`.
+
+Key backend details:
+
+- `server/routes/auth.js`
+  - `POST /api/auth/register`
+    - Validates `name`, `phone`, and `password`.
+    - Creates a `User` record with hashed password.
+    - Generates a JWT.
+    - Sets an HttpOnly cookie `token`.
+  - `POST /api/auth/login`
+    - Verifies phone and password.
+    - Issues a JWT cookie.
+  - `POST /api/auth/logout`
+    - Clears the auth cookie.
+  - `GET /api/auth/me`
+    - Protected by `middleware/auth.js`.
+    - Returns current user info if authenticated.
+
+- `server/routes/detect.js`
+  - `POST /api/detect`
+    - Applies a rate limiter: max 10 requests per minute per IP.
+    - Accepts a single uploaded image via Multer middleware.
+    - Validates crop type: `maize`, `wheat`, or `teff`.
+    - Stores the uploaded image in `server/uploads/`.
+    - Builds a FormData request to the ML microservice at `ML_SERVICE_URL`.
+    - Sends the image and crop name to the Python FastAPI `/predict` endpoint.
+    - Saves the returned prediction to MongoDB as a `Detection` record.
+    - If the ML microservice is offline, performs a high-fidelity simulated fallback prediction and still saves the detection.
+    - Supports optional user attachment from JWT cookie or authorization header.
+
+- `server/routes/history.js`
+  - `GET /api/history`
+    - Returns the authenticated user's saved scan history.
+  - `DELETE /api/history/:id`
+    - Deletes a scan record belonging to the authenticated user.
+  - `GET /api/history/stats`
+    - Returns aggregates: total scans, healthy count, disease count, last scan date, most common disease, and crop breakdown.
+
+- `server/routes/diseases.js`
+  - Provides disease library data and auto-seeded disease guides.
+  - Used by the frontend disease handbook page.
+
+- `server/middleware/upload.js`
+  - Uses Multer for disk storage.
+  - Writes uploads into `server/uploads/`.
+  - Limits file size to 10 MB.
+  - Only allows `.png`, `.jpg`, `.jpeg`, `.webp`.
+
+- `server/middleware/auth.js`
+  - Checks for a JWT token in cookies or the Authorization header.
+  - Verifies the token with `JWT_SECRET`.
+  - Rejects requests that are not authenticated.
+
+- `server/models/User.js`
+  - Defines user fields: name, phone, passwordHash, profilePhoto, role, lastLogin, createdAt.
+  - Hashes passwords on save with bcrypt.
+  - Provides `comparePassword()` for login validation.
+
+- `server/models/Detection.js`
+  - Defines detection records: userId, cropType, imagePath, diseaseDetected, diseaseAmharic, confidence, severity, recommendations, location, deviceInfo, createdAt.
+
+
+-----
+
+4. ML Service Overview (`ml_service/`)
+--------------------------------------
+
+Stack:
+- Python
+- FastAPI
+- Uvicorn
+- Pillow (PIL)
+- Optional Ultralytics YOLOv8
+- Optional PyTorch
+
+Purpose:
+- Accept an image file and crop type.
+- Run classification inference.
+- Return crop disease predictions with Amharic and English recommendations.
+- Validate uploaded image content.
+- Provide fallback simulated responses if model weights are not available.
+
+Key details:
+
+- `ml_service/main.py`
+  - Launches a FastAPI app.
+  - Enables CORS for all origins.
+  - Reads model paths from `MAIZE_MODEL_PATH` and `WHEAT_MODEL_PATH` environment variables.
+  - On startup attempts to load YOLO models if `ultralytics` is installed.
+  - If model weights are missing or not loaded, the service remains available and returns simulation responses.
+
+- `POST /predict`
+  - Accepts `file` and `crop` fields.
+  - Validates the file as an image using PIL.
+  - If YOLO models are loaded:
+    - Runs inference.
+    - Extracts the top-class label and confidence.
+    - Maps the result to a predefined recommendation dictionary.
+  - If no YOLO model is loaded or inference fails:
+    - Uses a random but realistic fallback response.
+    - Returns disease name, severity, confidence, and recommendations in Amharic and English.
+
+- Predefined disease response dictionary includes:
+  - Maize: Blight, Common Rust, Gray Leaf Spot, Healthy.
+  - Wheat: Yellow Rust, Mildew, Septoria, Healthy.
+
+- `ml_service/requirements.txt`
+  - Standard Python dependencies for FastAPI and inference.
+  - The actual file list may include `fastapi`, `uvicorn`, `pillow`, `numpy`, `torch`, `ultralytics`.
+
+
+-----
+
+5. How the Full Flow Works
+---------------------------
+
+1. User opens the frontend at `http://localhost:5173`.
+2. The user selects a crop and uploads a leaf image.
+3. The frontend sends a `POST /api/detect` request to the backend Express server.
+4. Backend saves the uploaded image to `server/uploads/` and forwards the file to the ML microservice at `http://localhost:8000/predict`.
+5. ML microservice validates the image and returns a prediction object.
+6. Backend creates a `Detection` record in MongoDB with the prediction, image path, and optional userId.
+7. Backend returns the detection record to the frontend.
+8. The frontend displays the result, including:
+   - detected disease name
+   - Amharic and English recommendations
+   - severity
+   - confidence
+
+If the user is authenticated, the scan data is saved under their account and is visible in `/history` and `/dashboard`.
+
+If the ML service is offline, the backend still returns a simulated prediction and saves it. This prevents the app from failing when the Python microservice is unavailable.
+
+-----
+
+6. Authentication Flow
+----------------------
+
+- Users register with `POST /api/auth/register`.
+- Users login with `POST /api/auth/login`.
+- The backend issues a JWT stored in an HttpOnly cookie named `token`.
+- Protected endpoints require a valid JWT.
+- `AuthProvider` in the frontend reads `/api/auth/me` to detect if the user is authenticated.
+- Protected pages redirect unauthenticated users to `/login`.
+
+
+-----
+
+7. Environment Variables and Configuration
+-------------------------------------------
+
+The project uses environment variables. Typical values include:
+
+- `MONGO_URI` - MongoDB connection string.
+- `PORT` - Express server port (default 5000).
+- `JWT_SECRET` - Secret key for signing JWT tokens.
+- `ML_SERVICE_URL` - URL of the Python microservice (default `http://localhost:8000/predict`).
+- `MAIZE_MODEL_PATH` - Path to maize model weights.
+- `WHEAT_MODEL_PATH` - Path to wheat model weights.
+
+For the `client`, `VITE_API_URL` can be set in `.env` to override the backend API base URL.
+
+
+-----
+
+8. Run Instructions
+-------------------
+
+Step 1: Install dependencies for backend
+```bash
+cd server
+npm install
+```
+
+Step 2: Install dependencies for frontend
+```bash
+cd ../client
+npm install
+```
+
+Step 3: Install Python dependencies for ML service
+```bash
+cd ../ml_service
+pip install -r requirements.txt
+```
+
+Step 4: Start MongoDB locally
+- Run your MongoDB server on `mongodb://localhost:27017`
+- Or set `MONGO_URI` to a hosted MongoDB URI.
+
+Step 5: Start the ML service
+```bash
+cd ml_service
+python main.py
+```
+
+Step 6: Start the backend server
+```bash
+cd ../server
+npm run dev
+```
+
+Step 7: Start the frontend application
+```bash
+cd ../client
+npm run dev
+```
+
+Then open the app in a browser at the Vite URL shown in the terminal, typically `http://localhost:5173`.
+
+
+-----
+
+9. Important Runtime Notes
+--------------------------
+
+- `server/index.js` allows cross-origin requests from the React client domain and sends cookies.
+- Uploaded images are stored in `server/uploads/` and served from `/uploads`.
+- The ML microservice is optional; the backend has fallback logic if it is down.
+- Authentication state is preserved using HttpOnly cookies, making token handling more secure.
+- Rate limiting in `server/routes/detect.js` prevents abuse of the prediction endpoint.
+- The service reports user-friendly Amharic error messages for validation failures.
+
+
+-----
+
+10. File Structure Summary
+--------------------------
+
+Root:
+- `README.md` - project introduction and high-level summary.
+- `PROJECT_OVERVIEW.txt` - this file.
+
+Client:
+- `src/App.jsx` - route definitions and providers.
+- `src/components/` - UI components.
+- `src/pages/` - page screens.
+- `src/context/` - global state contexts.
+- `src/utils/api.js` - Axios API wrapper.
+
+Server:
+- `index.js` - Express server entrypoint.
+- `routes/` - API routes.
+- `models/` - MongoDB schemas.
+- `middleware/` - auth and file upload logic.
+- `uploads/` - uploaded image storage.
+
+ML Service:
+- `main.py` - FastAPI prediction service.
+- `requirements.txt` - Python dependencies.
+- `models/` - PyTorch weight files.
+
+
+-----
+
+11. How to Understand the Project Quickly
+----------------------------------------
+
+- Start with `client/src/App.jsx` to see how pages are wired.
+- Read `client/src/utils/api.js` to understand network communication.
+- Inspect `server/index.js` to see backend middleware and routes.
+- Review `server/routes/detect.js` to understand the image classification pipeline.
+- Read `ml_service/main.py` to see how prediction requests are handled and how fallback simulation works.
+- Check `server/models/Detection.js` to know what data is stored for each scan.
+
+This project is built as a typical full-stack application with an independent ML microservice. The frontend is a React SPA, the backend is Express + MongoDB, and the ML layer uses FastAPI with optional YOLO inference.
+
+-----
+
+12. Replace Trained Model & Run the Project — Step-by-step (Detailed)
+---------------------------------------------------------------
+
+These are the exact steps to replace your trained model weights (from Google Drive/Colab), start the ML microservice, run the backend and the frontend, and test the flow. Follow them in order.
+
+A. Prepare and place new model weights
+
+1. Decide which crop model you are replacing:
+   - Maize model file expected path: `ml_service/models/maize_best.pt`
+   - Wheat model file expected path: `ml_service/models/wheat_best.pt`
+
+2. Download the model from Google Drive (two options):
+   - Manual (browser):
+     - Open your Drive, locate the saved `.pt` file, right-click → Download.
+     - Move the downloaded file to the project folder: `agrovision-ai/ml_service/models/`.
+
+   - Command-line (recommended for reproducibility):
+     - Install `gdown` if needed:
+       ```bash
+       pip install gdown
+       ```
+     - Run `gdown` with the Drive file URL or file id:
+       ```bash
+       # Example using a Drive file URL (replace DRIVE_URL with your link)
+       gdown 'DRIVE_URL' -O ml_service/models/new_model.pt
+       ```
+     - Rename the downloaded file to the expected name for the crop:
+       ```bash
+       # For maize
+       mv ml_service/models/new_model.pt ml_service/models/maize_best.pt
+
+       # For wheat
+       mv ml_service/models/new_model.pt ml_service/models/wheat_best.pt
+       ```
+     - On Windows PowerShell, use `Move-Item` instead of `mv`:
+       ```powershell
+       Move-Item .\\ml_service\\models\\new_model.pt .\\ml_service\\models\\maize_best.pt
+       ```
+
+3. Alternative: use Google Drive desktop sync to place the file directly inside `ml_service/models/`.
+
+4. Confirm the model file exists and is non-empty:
+   ```bash
+   ls -l ml_service/models/
+   # or on Windows
+   dir .\\ml_service\\models\\
+   ```
+
+B. Configure ML service to load the weights
+
+1. By default `ml_service/main.py` reads this environment configuration:
+   - `MAIZE_MODEL_PATH` (default: `./models/maize_best.pt`)
+   - `WHEAT_MODEL_PATH` (default: `./models/wheat_best.pt`)
+
+2. If you used the expected file names above you do not need to modify code. If your filenames differ, set environment variables before starting the service.
+
+Examples (Linux / macOS / Git Bash):
+```bash
+export MAIZE_MODEL_PATH=./ml_service/models/maize_best.pt
+export WHEAT_MODEL_PATH=./ml_service/models/wheat_best.pt
+```
+
+Windows (PowerShell):
+```powershell
+$env:MAIZE_MODEL_PATH = "./ml_service/models/maize_best.pt"
+$env:WHEAT_MODEL_PATH = "./ml_service/models/wheat_best.pt"
+```
+
+C. Start the ML (Python) microservice
+
+1. Install Python dependencies (one-time):
+```bash
+cd ml_service
+pip install -r requirements.txt
+```
+
+2. Start the service (from project root or `ml_service`):
+```bash
+# From project root
+cd ml_service
+python main.py
+
+# Or using uvicorn explicitly
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+3. Confirm service is up: open `http://localhost:8000/` in a browser or curl:
+```bash
+curl http://localhost:8000/
+```
+You should get a JSON status with `models_active` showing loaded models (e.g., `["maize"]`). If models are not loaded, `ultralytics` may be unavailable or the path may be wrong — check console logs.
+
+D. Install and start the backend (Express)
+
+1. Install Node dependencies:
+```bash
+cd server
+npm install
+```
+
+2. Create `.env` in `server/` (example content):
+```
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/agrovision
+JWT_SECRET=your_jwt_secret_here
+ML_SERVICE_URL=http://localhost:8000/predict
+```
+
+3. Start the backend in dev mode:
+```bash
+npm run dev
+```
+
+4. Confirm backend is up at `http://localhost:5000/` (or `PORT` you set):
+```bash
+curl http://localhost:5000/
+```
+
+E. Install and start the frontend (Vite + React)
+
+1. Install dependencies:
+```bash
+cd client
+npm install
+```
+
+2. If you need to override API base URL, create `client/.env` with:
+```
+VITE_API_URL=http://localhost:5000/api
+```
+
+3. Start the dev server:
+```bash
+npm run dev
+```
+
+4. Open the Vite URL shown in terminal (typically `http://localhost:5173`).
+
+F. Test the full detection flow
+
+1. Test ML microservice directly (bypasses backend):
+```bash
+curl -X POST -F "file=@/full/path/to/image.jpg" -F "crop=maize" http://localhost:8000/predict
+```
+
+2. Test via backend (exact route used by frontend):
+```bash
+curl -v -X POST -F "image=@/full/path/to/image.jpg" -F "crop=maize" http://localhost:5000/api/detect
+```
+If everything is working you will receive a JSON `detection` object. If backend cannot reach the ML service it will return a simulated prediction but still save the detection in MongoDB.
+
+G. Troubleshooting quick checklist
+
+- If `ml_service` prints that ultralytics is unavailable, install it if you want real inference (may need CUDA/PyTorch matching your GPU):
+  ```bash
+  pip install ultralytics torch torchvision --extra-index-url https://download.pytorch.org/whl/cu118
+  ```
+- Confirm model file paths and sizes (non-zero, >10 KB). If small, the file was not downloaded correctly.
+- Check logs in `ml_service` console for errors while loading weights.
+- Check `server` console for errors forwarding requests to `ML_SERVICE_URL`.
+- Confirm `client` `VITE_API_URL` matches backend API domain.
+
+H. Summary quick command sequence (copy-paste)
+
+```bash
+# From project root
+# 1) Put weights into ml_service/models/ and name them: maize_best.pt, wheat_best.pt
+
+# 2) ML service
+cd ml_service
+pip install -r requirements.txt
+python main.py
+
+# 3) Backend
+cd ../server
+npm install
+# create .env then
+npm run dev
+
+# 4) Frontend
+cd ../client
+npm install
+npm run dev
+```
+
+If you'd like, I can: (a) copy your Drive link and provide the exact `gdown` command, (b) set `MAIZE_MODEL_PATH`/`WHEAT_MODEL_PATH` automatically in a `.env` template, or (c) run basic smoke tests here. Tell me which and I'll proceed.
+
+-----
+
+12. Replace Trained Model & Run the Project — Step-by-step (Detailed)
+---------------------------------------------------------------
+
+These are the exact steps to replace your trained model weights (from Google Drive/Colab), start the ML microservice, run the backend and the frontend, and test the flow. Follow them in order.
+
+A. Prepare and place new model weights
+
+1. Decide which crop model you are replacing:
+   - Maize model file expected path: `ml_service/models/maize_best.pt`
+   - Wheat model file expected path: `ml_service/models/wheat_best.pt`
+
+2. Download the model from Google Drive (two options):
+   - Manual (browser):
+     - Open your Drive, locate the saved `.pt` file, right-click → Download.
+     - Move the downloaded file to the project folder: `agrovision-ai/ml_service/models/`.
+
+   - Command-line (recommended for reproducibility):
+     - Install `gdown` if needed:
+       ```bash
+       pip install gdown
+       ```
+     - Run `gdown` with the Drive file URL or file id:
+       ```bash
+       # Example using a Drive file URL (replace DRIVE_URL with your link)
+       gdown 'DRIVE_URL' -O ml_service/models/new_model.pt
+       ```
+     - Rename the downloaded file to the expected name for the crop:
+       ```bash
+       # For maize
+       mv ml_service/models/new_model.pt ml_service/models/maize_best.pt
+
+       # For wheat
+       mv ml_service/models/new_model.pt ml_service/models/wheat_best.pt
+       ```
+     - On Windows PowerShell, use `Move-Item` instead of `mv`:
+       ```powershell
+       Move-Item .\ml_service\models\new_model.pt .\ml_service\models\maize_best.pt
+       ```
+
+3. Alternative: use Google Drive desktop sync to place the file directly inside `ml_service/models/`.
+
+4. Confirm the model file exists and is non-empty:
+   ```bash
+   ls -l ml_service/models/
+   # or on Windows
+   dir .\ml_service\models\
+   ```
+
+B. Configure ML service to load the weights
+
+1. By default `ml_service/main.py` reads this environment configuration:
+   - `MAIZE_MODEL_PATH` (default: `./models/maize_best.pt`)
+   - `WHEAT_MODEL_PATH` (default: `./models/wheat_best.pt`)
+
+2. If you used the expected file names above you do not need to modify code. If your filenames differ, set environment variables before starting the service.
+
+Examples (Linux / macOS / Git Bash):
+```bash
+export MAIZE_MODEL_PATH=./ml_service/models/maize_best.pt
+export WHEAT_MODEL_PATH=./ml_service/models/wheat_best.pt
+```
+
+Windows (PowerShell):
+```powershell
+$env:MAIZE_MODEL_PATH = "./ml_service/models/maize_best.pt"
+$env:WHEAT_MODEL_PATH = "./ml_service/models/wheat_best.pt"
+```
+
+C. Start the ML (Python) microservice
+
+1. Install Python dependencies (one-time):
+```bash
+cd ml_service
+pip install -r requirements.txt
+```
+
+2. Start the service (from project root or `ml_service`):
+```bash
+# From project root
+cd ml_service
+python main.py
+
+# Or using uvicorn explicitly
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+3. Confirm service is up: open `http://localhost:8000/` in a browser or curl:
+```bash
+curl http://localhost:8000/
+```
+You should get a JSON status with `models_active` showing loaded models (e.g., `["maize"]`). If models are not loaded, `ultralytics` may be unavailable or the path may be wrong — check console logs.
+
+D. Install and start the backend (Express)
+
+1. Install Node dependencies:
+```bash
+cd server
+npm install
+```
+
+2. Create `.env` in `server/` (example content):
+```
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/agrovision
+JWT_SECRET=your_jwt_secret_here
+ML_SERVICE_URL=http://localhost:8000/predict
+```
+
+3. Start the backend in dev mode:
+```bash
+npm run dev
+```
+
+4. Confirm backend is up at `http://localhost:5000/` (or `PORT` you set):
+```bash
+curl http://localhost:5000/
+```
+
+E. Install and start the frontend (Vite + React)
+
+1. Install dependencies:
+```bash
+cd client
+npm install
+```
+
+2. If you need to override API base URL, create `client/.env` with:
+```
+VITE_API_URL=http://localhost:5000/api
+```
+
+3. Start the dev server:
+```bash
+npm run dev
+```
+
+4. Open the Vite URL shown in terminal (typically `http://localhost:5173`).
+
+F. Test the full detection flow
+
+1. Test ML microservice directly (bypasses backend):
+```bash
+curl -X POST -F "file=@/full/path/to/image.jpg" -F "crop=maize" http://localhost:8000/predict
+```
+
+2. Test via backend (exact route used by frontend):
+```bash
+curl -v -X POST -F "image=@/full/path/to/image.jpg" -F "crop=maize" http://localhost:5000/api/detect
+```
+If everything is working you will receive a JSON `detection` object. If backend cannot reach the ML service it will return a simulated prediction but still save the detection in MongoDB.
+
+G. Troubleshooting quick checklist
+
+- If `ml_service` prints that ultralytics is unavailable, install it if you want real inference (may need CUDA/PyTorch matching your GPU):
+  ```bash
+  pip install ultralytics torch torchvision --extra-index-url https://download.pytorch.org/whl/cu118
+  ```
+- Confirm model file paths and sizes (non-zero, >10 KB). If small, the file was not downloaded correctly.
+- Check logs in `ml_service` console for errors while loading weights.
+- Check `server` console for errors forwarding requests to `ML_SERVICE_URL`.
+- Confirm `client` `VITE_API_URL` matches backend API domain.
+
+H. Summary quick command sequence (copy-paste)
+
+```bash
+# From project root
+# 1) Put weights into ml_service/models/ and name them: maize_best.pt, wheat_best.pt
+
+# 2) ML service
+cd ml_service
+pip install -r requirements.txt
+python main.py
+
+# 3) Backend
+cd ../server
+npm install
+# create .env then
+npm run dev
+
+# 4) Frontend
+cd ../client
+npm install
+npm run dev
+```
+
+If you'd like, I can: (a) copy your Drive link and provide the exact `gdown` command, (b) set `MAIZE_MODEL_PATH`/`WHEAT_MODEL_PATH` automatically in a `.env` template, or (c) run basic smoke tests here. Tell me which and I'll proceed.
+
+
+-----
+
+If you want, I can also create a shorter diagram file or a markdown version for easier reading in a browser.
