@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
-import API from '../utils/api';
+import API, { getImageUrl } from '../utils/api';
 import toast from 'react-hot-toast';
 
 const History = () => {
@@ -130,7 +130,7 @@ const History = () => {
         {/* Printable invoice title header (visible ONLY during print) */}
         <div className="hidden print:block text-center border-b-2 border-zinc-900 pb-4 mb-6">
           <h1 className="text-3xl font-black text-zinc-900 font-ethiopic">🌾 አግሮቪዥን AI - የሰብል ምርመራ ሪፖርት</h1>
-          <p className="text-xs font-semibold font-ethiopic text-zinc-600 mt-1">Addis Ababa, Ethiopia | Date: {new Date().toLocaleDateString()}</p>
+          <p className="text-xs font-semibold font-ethiopic text-zinc-600 mt-1">Debre Markos, Ethiopia | Date: {new Date().toLocaleDateString()}</p>
         </div>
 
         {/* 1. Statistics Cards at Top (Print hidden for neat sheets) */}
@@ -266,7 +266,7 @@ const History = () => {
                     >
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-zinc-100">
-                          <img src={item.imagePath || '/uploads/placeholder.jpg'} alt="Leaf" className="w-full h-full object-cover" />
+                          <img src={getImageUrl(item.imagePath)} alt="Leaf" className="w-full h-full object-cover" />
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap font-bold text-sm uppercase tracking-wide">
@@ -329,7 +329,7 @@ const History = () => {
 
               <div className="space-y-4">
                 <div className="w-full h-48 rounded-2xl overflow-hidden bg-zinc-100 shadow-inner">
-                  <img src={activeDetail.imagePath} alt="Scan Leaf" className="w-full h-full object-cover" />
+                  <img src={getImageUrl(activeDetail.imagePath)} alt="Scan Leaf" className="w-full h-full object-cover" />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 font-ethiopic text-xs">

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Detection = require('../models/Detection');
 const auth = require('../middleware/auth');
 
@@ -59,7 +60,7 @@ router.get('/stats', auth, async (req, res) => {
 
     // Find the most common disease detected using MongoDB aggregation
     const aggregation = await Detection.aggregate([
-      { $match: { userId: new require('mongoose').Types.ObjectId(userId), severity: { $ne: 'none' } } },
+      { $match: { userId: new mongoose.Types.ObjectId(userId), severity: { $ne: 'none' } } },
       { $group: { _id: '$diseaseAmharic', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: 1 }

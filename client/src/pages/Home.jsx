@@ -252,7 +252,7 @@ const Home = () => {
             {t('footerText')}
           </p>
           <div className="text-[10px] text-zinc-600 font-semibold pt-4">
-            © {new Date().getFullYear()} AgroVision AI. All rights reserved. Addis Ababa, Ethiopia.
+            © {new Date().getFullYear()} AgroVision AI. All rights reserved. Debre Markos, Ethiopia.
           </div>
         </div>
       </footer>

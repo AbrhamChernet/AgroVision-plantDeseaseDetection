@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAudio } from '../context/AudioContext';
-import API from '../utils/api';
+import API, { getImageUrl } from '../utils/api';
 import UploadZone from '../components/UploadZone';
 import ResultCard from '../components/ResultCard';
 import AbelMascot from '../components/AbelMascot';
@@ -324,7 +324,7 @@ const Detect = () => {
                   className="bg-zinc-50 dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-2.5 cursor-pointer hover:border-emerald-500 transition-all duration-300 flex flex-col items-center text-center shadow-sm hover:shadow"
                 >
                   <div className="w-full h-20 rounded-xl overflow-hidden mb-2 bg-zinc-200">
-                    <img src={scan.imagePath} alt={scan.diseaseDetected} className="w-full h-full object-cover" />
+                    <img src={getImageUrl(scan.imagePath)} alt={scan.diseaseDetected} className="w-full h-full object-cover" />
                   </div>
                   <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 font-ethiopic uppercase tracking-wide">
                     {scan.cropType === 'maize' ? 'በቆሎ' : 'ስንዴ'}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLanguage } from './LanguageContext';
-import { speakAmharicOrEnglish } from '../utils/speech';
+import { speakAmharicOrEnglish, stopSpeech } from '../utils/speech';
 
 const AudioContext = createContext();
 
@@ -113,7 +113,7 @@ export const AudioProvider = ({ children }) => {
     
     // Stop any ongoing speech if muted
     if (nextMute) {
-      window.speechSynthesis?.cancel();
+      stopSpeech();
     }
   };
 

@@ -61,3 +61,19 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(16, 185, 129, 0.4);
 }
+
+/* Print layout optimizations to remove browser header/footer and clean up page structure */
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm; /* Removes default headers (title/client) and footers (URL) */
+  }
+  body {
+    padding: 15mm !important;
+    background: white !important;
+    color: black !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+}

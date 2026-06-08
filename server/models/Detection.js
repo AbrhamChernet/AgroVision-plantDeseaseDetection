@@ -41,8 +41,8 @@ const DetectionSchema = new mongoose.Schema({
     required: true
   },
   location: {
-    lat: { type: Number, default: 9.03 }, // Default to Addis Ababa latitude
-    lng: { type: Number, default: 38.74 } // Default to Addis Ababa longitude
+    lat: { type: Number, default: 10.35 }, // Default to Debre Markos latitude
+    lng: { type: Number, default: 37.73 } // Default to Debre Markos longitude
   },
   deviceInfo: {
     type: String,

@@ -24,4 +24,14 @@ API.interceptors.response.use(
   }
 );
 
+export const getImageUrl = (path) => {
+  if (!path) return '/uploads/placeholder.jpg';
+  if (path.startsWith('http') || path.startsWith('data:')) {
+    return path;
+  }
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const serverBase = apiBase.replace(/\/api\/?$/, ''); // Remove trailing '/api' or '/api/'
+  return `${serverBase}${path.startsWith('/') ? '' : '/'}${path}`;
+};
+
 export default API;

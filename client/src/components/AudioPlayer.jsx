@@ -7,7 +7,7 @@ const AudioPlayer = () => {
   const { t } = useLanguage();
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 animate-[slideDown_0.4s_ease-out]">
+    <div className="fixed bottom-6 right-6 z-50 animate-[slideDown_0.4s_ease-out] print:hidden">
       <button
         onClick={() => {
           toggleMute();

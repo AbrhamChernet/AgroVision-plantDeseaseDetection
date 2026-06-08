@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import { useAudio } from '../context/AudioContext';
 import { useAuth } from '../context/AuthContext';
-import API from '../utils/api';
+import API, { getImageUrl } from '../utils/api';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 
 const Dashboard = () => {
@@ -83,13 +83,13 @@ const Dashboard = () => {
     fetchDashboardData();
   }, [isAuthenticated]);
 
-  // Fetch Addis Ababa live weather conditions (fallback to agricultural simulation if offline/api key empty)
+  // Fetch Debre Markos live weather conditions (fallback to agricultural simulation if offline/api key empty)
   useEffect(() => {
     const fetchWeather = async () => {
       try {
         const API_KEY = import.meta.env.OPENWEATHER_API_KEY || '6d123e45f9e8a75e01f234e9c70a8d3b'; // Mock fallback key
         const weatherRes = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?q=Addis%20Ababa&units=metric&appid=${API_KEY}`
+          `https://api.openweathermap.org/data/2.5/weather?q=Debre%20Markos&units=metric&appid=${API_KEY}`
         );
         const data = await weatherRes.json();
         
@@ -241,7 +241,7 @@ const Dashboard = () => {
             {/* Weather & Crop Outbreak Risk Warning widget */}
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xl">
               <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-ethiopic mb-4">
-                🌤️ {t('weatherWidget')} (አዲስ አበባ)
+                🌤️ {t('weatherWidget')} (ደብረ ማርቆስ)
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center">
@@ -327,7 +327,7 @@ const Dashboard = () => {
                       className="flex items-center gap-3 p-2 bg-zinc-50 dark:bg-zinc-950/40 hover:bg-zinc-100 dark:hover:bg-zinc-950/80 rounded-2xl cursor-pointer transition-all border border-zinc-100 dark:border-zinc-800/80 shadow-sm"
                     >
                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-200 shrink-0">
-                        <img src={detection.imagePath} alt="crop" className="w-full h-full object-cover" />
+                        <img src={getImageUrl(detection.imagePath)} alt="crop" className="w-full h-full object-cover" />
                       </div>
                       <div className="text-left space-y-0.5 truncate">
                         <h4 className="font-black text-zinc-950 dark:text-white font-ethiopic text-xs truncate">
