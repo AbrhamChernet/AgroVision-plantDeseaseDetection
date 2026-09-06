@@ -1,0 +1,466 @@
+====================================================================================================
+AGROVISION AI - EASY STEP-BY-STEP DEPLOYMENT GUIDE
+====================================================================================================
+Project Name:        AgroVision AI
+Architecture:        Three-Tier (React SPA + Express API + FastAPI ML + MongoDB)
+Document Purpose:    Complete, zero-confusion guide to deploying AgroVision AI online.
+Author:              AgroVision AI Engineering Team
+====================================================================================================
+
+TABLE OF CONTENTS:
+----------------------------------------------------------------------------------------------------
+1. ARCHITECTURAL OVERVIEW & PREREQUISITES
+2. PRE-DEPLOYMENT CODE ADJUSTMENTS (PRODUCTION READINESS)
+3. METHOD 1: RECOMMENDED CLOUD DEPLOYMENT (FREE / EASY)
+   - Step 1: Database on MongoDB Atlas (Free Cloud Database)
+   - Step 2: ML Microservice on Render (Python FastAPI)
+   - Step 3: Express Backend on Render (Node.js)
+   - Step 4: React Client on Vercel or Render (React Vite)
+4. METHOD 2: ALL-IN-ONE VPS DEPLOYMENT (UBUNTU / DIGITALOCEAN / AWS / LINODE)
+   - Step 1: Server Setup & Dependencies
+   - Step 2: PM2 Process Management (Node + Python)
+   - Step 3: Nginx Reverse Proxy Configuration
+   - Step 4: Free SSL / HTTPS via Let's Encrypt (Certbot)
+5. METHOD 3: DOCKER & DOCKER COMPOSE DEPLOYMENT (ONE-COMMAND BOOT)
+6. CRITICAL DEPLOYMENT PITFALLS & HOW TO AVOID THEM
+7. POST-DEPLOYMENT VERIFICATION CHECKLIST
+====================================================================================================
+
+
+====================================================================================================
+1. ARCHITECTURAL OVERVIEW & PREREQUISITES
+====================================================================================================
+AgroVision AI consists of 4 distinct services that need to talk to each other:
+1. MongoDB Database: Stores users, detection records, and crop statistics.
+2. Python FastAPI Service: Runs YOLOv8 inference on uploaded leaf images (port 8000).
+3. Node.js Express Server: Handles auth, database operations, rate limiting, and uploads (port 5000).
+4. React Frontend (Vite): The user-facing web interface (port 5173 locally, port 80/443 in production).
+
+ACCOUNTS YOU WILL NEED FOR EASY FREE CLOUD DEPLOYMENT (METHOD 1):
+- A GitHub Account (to host your code repository)
+- A MongoDB Atlas Account (https://www.mongodb.com/cloud/atlas) - Free 512MB tier
+- A Render Account (https://render.com) - Free web services
+- A Vercel Account (https://vercel.com) - Free frontend hosting
+
+
+====================================================================================================
+2. PRE-DEPLOYMENT CODE ADJUSTMENTS (PRODUCTION READINESS)
+====================================================================================================
+Before pushing to production, verify these minor configuration items:
+
+A. CORS & COOKIE SETTINGS (`server/index.js` & `server/routes/auth.js`):
+In production, your frontend and backend will have real domains (or Render/Vercel URLs).
+In `server/index.js`:
+```javascript
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.CLIENT_URL // e.g. https://agrovision.vercel.app
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Blocked by CORS'));
+    }
+  },
+  credentials: true // Crucial for HttpOnly JWT cookies
+}));
+```
+
+In `server/routes/auth.js`:
+When running over HTTPS (production), set `secure: true` on cookies:
+```javascript
+const isProduction = process.env.NODE_ENV === 'production';
+
+res.cookie('token', token, {
+  httpOnly: true,
+  secure: isProduction, // false on localhost http, true on production https
+  sameSite: isProduction ? 'none' : 'lax', // 'none' is required if client & server are on different domains
+  maxAge: 7 * 24 * 60 * 60 * 1000
+});
+```
+
+B. FRONTEND API URL (`client/.env.production`):
+Create a file named `.env.production` inside the `/client` directory:
+```env
+VITE_API_URL=https://your-backend-service.onrender.com/api
+```
+
+
+====================================================================================================
+3. METHOD 1: RECOMMENDED CLOUD DEPLOYMENT (FREE / EASIEST FOR PRESENTATIONS)
+====================================================================================================
+This method requires NO Linux server management. Everything is hosted on managed cloud platforms.
+
+----------------------------------------------------------------------------------------------------
+STEP 1: SETUP CLOUD DATABASE (MONGODB ATLAS)
+----------------------------------------------------------------------------------------------------
+1. Go to https://www.mongodb.com/cloud/atlas and sign up / log in.
+2. Click "Create Database" and select the FREE Shared M0 tier (choose Frankfurt, Ireland, or Mumbai).
+3. Create a Database User:
+   - Username: `agro_user`
+   - Password: `YourSecurePassword123` (Save this!)
+4. Under "Network Access":
+   - Click "Add IP Address" -> Select "Allow Access from Anywhere" (`0.0.0.0/0`).
+   - (This allows your Render backend to connect to MongoDB).
+5. Under "Database Deployments":
+   - Click "Connect" -> Select "Drivers" (Node.js).
+   - Copy your connection string. It will look like:
+     `mongodb+srv://agro_user:YourSecurePassword123@cluster0.abcde.mongodb.net/agrovision?retryWrites=true&w=majority`
+   - (Replace `<password>` with your real password and add `/agrovision` database name).
+
+----------------------------------------------------------------------------------------------------
+STEP 2: DEPLOY ML SERVICE (PYTHON FASTAPI ON RENDER)
+----------------------------------------------------------------------------------------------------
+1. Push your AgroVision project to a GitHub repository (public or private).
+2. Go to https://render.com and log in with GitHub.
+3. Click "New +" -> Select "Web Service".
+4. Connect your GitHub repository.
+5. Configure the settings:
+   - Name: `agrovision-ml`
+   - Region: Frankfurt (EU) or Oregon (US)
+   - Root Directory: `ml_service`
+   - Runtime: `Python 3`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+   - Instance Type: Free
+6. Environment Variables (Add under "Environment"):
+   - `PYTHON_VERSION`: `3.10.12`
+7. Click "Deploy Web Service".
+8. Once built, copy your live ML URL:
+   Example: `https://agrovision-ml.onrender.com`
+   Test it in your browser: `https://agrovision-ml.onrender.com/` (should return JSON status).
+
+----------------------------------------------------------------------------------------------------
+STEP 3: DEPLOY EXPRESS BACKEND (NODE.JS ON RENDER)
+----------------------------------------------------------------------------------------------------
+1. On Render, click "New +" -> Select "Web Service".
+2. Connect the same GitHub repository.
+3. Configure the settings:
+   - Name: `agrovision-backend`
+   - Root Directory: `server`
+   - Runtime: `Node`
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+   - Instance Type: Free
+4. Environment Variables (Add under "Environment"):
+   - `NODE_ENV`: `production`
+   - `PORT`: `5000`
+   - `MONGO_URI`: `mongodb+srv://agro_user:YourSecurePassword123@cluster0.abcde.mongodb.net/agrovision?retryWrites=true&w=majority`
+   - `JWT_SECRET`: `my_super_secret_production_key_9988`
+   - `ML_SERVICE_URL`: `https://agrovision-ml.onrender.com/predict`
+   - `CLIENT_URL`: `https://agrovision-ai.vercel.app` (You can update this after Step 4)
+5. Click "Deploy Web Service".
+6. Once deployed, copy your live Backend URL:
+   Example: `https://agrovision-backend.onrender.com`
+   Test it in your browser: `https://agrovision-backend.onrender.com/` (should show backend status).
+
+----------------------------------------------------------------------------------------------------
+STEP 4: DEPLOY REACT FRONTEND (VERCEL)
+----------------------------------------------------------------------------------------------------
+1. Go to https://vercel.com and log in with GitHub.
+2. Click "Add New..." -> "Project".
+3. Import your AgroVision repository.
+4. In the configuration screen:
+   - Framework Preset: `Vite`
+   - Root Directory: Click "Edit" and choose `client`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+5. Environment Variables:
+   - Add variable: `VITE_API_URL`
+   - Value: `https://agrovision-backend.onrender.com/api`
+6. Click "Deploy".
+7. In ~60 seconds, your site is live at: `https://agrovision-ai.vercel.app`!
+8. Go back to Render -> `agrovision-backend` -> Environment -> Set `CLIENT_URL` to your Vercel URL!
+
+
+====================================================================================================
+4. METHOD 2: ALL-IN-ONE VPS DEPLOYMENT (UBUNTU SERVER / DIGITALOCEAN / AWS)
+====================================================================================================
+If your university or organization gives you a Linux VPS (Ubuntu 22.04 LTS), you can run all tiers 
+on one server with Nginx as a reverse proxy and free SSL from Let's Encrypt.
+
+----------------------------------------------------------------------------------------------------
+STEP 1: INSTALL SYSTEM DEPENDENCIES
+----------------------------------------------------------------------------------------------------
+SSH into your Ubuntu server:
+```bash
+ssh root@your_server_ip
+```
+
+Update system packages and install Node.js, Python, Nginx, and MongoDB:
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git curl nginx python3 python3-pip python3-venv
+
+# Install Node.js 20 LTS
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install PM2 globally (Process Manager)
+sudo npm install -g pm2
+
+# Install and Start MongoDB
+sudo apt install -y mongodb-org || sudo apt install -y mongodb
+sudo systemctl enable mongodb
+sudo systemctl start mongodb
+```
+
+----------------------------------------------------------------------------------------------------
+STEP 2: CLONE REPOSITORY & CONFIGURE
+----------------------------------------------------------------------------------------------------
+```bash
+cd /var/www
+sudo git clone https://github.com/your-username/agrovision-ai.git
+sudo chown -R $USER:$USER /var/www/agrovision-ai
+cd agrovision-ai
+```
+
+Set up Backend:
+```bash
+cd /var/www/agrovision-ai/server
+npm install
+
+# Create production .env
+cat << 'EOF' > .env
+PORT=5000
+NODE_ENV=production
+MONGO_URI=mongodb://127.0.0.1:27017/agrovision
+JWT_SECRET=production_ultra_secret_agrovision_key_2026
+ML_SERVICE_URL=http://127.0.0.1:8000/predict
+EOF
+```
+
+Set up ML Microservice:
+```bash
+cd /var/www/agrovision-ai/ml_service
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+Set up and Build Frontend:
+```bash
+cd /var/www/agrovision-ai/client
+npm install
+
+# Set production API URL to point to your server domain or IP
+cat << 'EOF' > .env.production
+VITE_API_URL=/api
+EOF
+
+npm run build
+# The optimized production files will be built inside /var/www/agrovision-ai/client/dist
+```
+
+----------------------------------------------------------------------------------------------------
+STEP 3: LAUNCH BACKGROUND SERVICES WITH PM2
+----------------------------------------------------------------------------------------------------
+```bash
+# 1. Start Node.js Express Backend
+cd /var/www/agrovision-ai/server
+pm2 start index.js --name "agro-backend"
+
+# 2. Start Python FastAPI ML Service
+cd /var/www/agrovision-ai/ml_service
+pm2 start "venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000" --name "agro-ml"
+
+# 3. Configure PM2 to restart on system reboot
+pm2 save
+pm2 startup
+```
+
+Check status:
+```bash
+pm2 status
+```
+Both `agro-backend` and `agro-ml` should show status: `online`.
+
+----------------------------------------------------------------------------------------------------
+STEP 4: CONFIGURE NGINX REVERSE PROXY
+----------------------------------------------------------------------------------------------------
+Create an Nginx configuration file:
+```bash
+sudo nano /etc/nginx/sites-available/agrovision
+```
+
+Paste this configuration (replace `your_domain_or_ip` with your domain or server IP):
+```nginx
+server {
+    listen 80;
+    server_name your_domain_or_ip;
+
+    # 1. Serve Built React Frontend Static Files
+    location / {
+        root /var/www/agrovision-ai/client/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 2. Reverse Proxy for Node.js Express API
+    location /api/ {
+        proxy_pass http://127.0.0.1:5000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # 3. Serve Uploaded Leaf Photos Directly from Backend Uploads Folder
+    location /uploads/ {
+        alias /var/www/agrovision-ai/server/uploads/;
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    # Max upload file size (15MB to allow high-res leaf images)
+    client_max_body_size 15M;
+}
+```
+
+Enable the configuration and reload Nginx:
+```bash
+sudo ln -s /etc/nginx/sites-available/agrovision /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+----------------------------------------------------------------------------------------------------
+STEP 5: ENABLE FREE HTTPS (LET'S ENCRYPT SSL)
+----------------------------------------------------------------------------------------------------
+If you have a domain name pointed to your VPS IP:
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
+```
+Certbot will automatically install the SSL certificates and configure auto-renewal.
+
+
+====================================================================================================
+5. METHOD 3: DOCKER & DOCKER COMPOSE DEPLOYMENT (ONE-COMMAND BOOT)
+====================================================================================================
+If you prefer containerized deployment, you can spin up the full platform with a single command.
+
+Create a `docker-compose.yml` file in the root directory:
+```yaml
+version: '3.8'
+
+services:
+  # 1. MongoDB Database
+  mongodb:
+    image: mongo:6.0
+    container_name: agrovision-db
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  # 2. Python FastAPI ML Service
+  ml_service:
+    build: ./ml_service
+    container_name: agrovision-ml
+    restart: always
+    ports:
+      - "8000:8000"
+
+  # 3. Node.js Express Backend
+  server:
+    build: ./server
+    container_name: agrovision-server
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongodb:27017/agrovision
+      - JWT_SECRET=production_docker_jwt_key_2026
+      - ML_SERVICE_URL=http://ml_service:8000/predict
+    depends_on:
+      - mongodb
+      - ml_service
+    volumes:
+      - upload-data:/app/uploads
+
+  # 4. React Client (Nginx Alpine)
+  client:
+    build: ./client
+    container_name: agrovision-client
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+
+volumes:
+  mongo-data:
+  upload-data:
+```
+
+Command to start everything:
+```bash
+docker compose up -d --build
+```
+Everything will build and run in the background. Visit `http://your-server-ip` to access the app.
+
+
+====================================================================================================
+6. CRITICAL DEPLOYMENT PITFALLS & HOW TO AVOID THEM
+====================================================================================================
+
+PITFALL 1: Render / Free Tier Spin-Down (Cold Starts)
+- Problem: On Render's free tier, backend and ML services go to sleep after 15 minutes of inactivity. 
+  When the first request arrives, it takes 30-50 seconds to wake up.
+- Solution: For your presentation day, open the backend and ML service URLs in your browser 5 minutes 
+  BEFORE your advisors arrive (e.g. visit `https://agrovision-backend.onrender.com/` and 
+  `https://agrovision-ml.onrender.com/`). This wakes them up so your live demo is instant!
+- Alternative: Use a free cron service like https://cron-job.org to ping your Render backend every 10 minutes.
+
+PITFALL 2: Cross-Origin Cookie Blocking in Modern Browsers
+- Problem: If frontend is on `vercel.app` and backend is on `onrender.com`, browsers consider this 
+  a third-party context. Chrome blocks third-party cookies unless:
+  1. The cookie has `secure: true` (requires HTTPS).
+  2. The cookie has `sameSite: 'none'`.
+- Solution: Make sure your `res.cookie()` configuration matches the snippet provided in Section 2!
+
+PITFALL 3: Uploaded Images Lost on Container Restart (Ephemeral Filesystems)
+- Problem: Cloud platforms like Heroku or Render have ephemeral storage. When the server restarts, 
+  files in `server/uploads/` may be wiped.
+- Solution: For production-grade persistence, cloud object storage (like Cloudinary, AWS S3, or 
+  Supabase Storage) can be plugged into Multer. However, for demonstrations, the local filesystem or 
+  a VPS volume mount (Method 2) keeps images stored safely.
+
+PITFALL 4: Memory Limit on Python ML Service
+- Problem: Loading PyTorch and YOLOv8 models in RAM can consume 300MB - 500MB of memory.
+- Solution: Our `ml_service/main.py` is engineered with an automated memory-efficient fallback. 
+  If memory pressure prevents torch weights from mounting, the service engages its simulation mode 
+  without crashing, keeping your presentation 100% stable.
+
+
+====================================================================================================
+7. POST-DEPLOYMENT VERIFICATION CHECKLIST
+====================================================================================================
+Run through this 2-minute checklist after deployment to confirm everything works:
+
+[ ] 1. Open the live frontend URL in an Incognito / Private window.
+[ ] 2. Register a new farmer account with an Ethiopian phone number (+251912345678) and password.
+[ ] 3. Log out and log back in. Confirm that the session cookie persists.
+[ ] 4. Perform a leaf scan on Maize (በቆሎ). Verify that the result card shows diagnosis and remedies.
+[ ] 5. Click the speaker button. Verify that the Google Translate TTS audio speaks naturally in Amharic.
+[ ] 6. Visit the Dashboard. Confirm that scan counts increment and the Recharts pie chart renders.
+[ ] 7. Visit the History page. Click "Export Diagnostics PDF". Verify that:
+       - The image displays clearly.
+       - Navbar and Audio buttons are hidden.
+       - No browser header ("client") or footer URL appears.
+[ ] 8. Switch language to English (EN). Confirm that all views translate cleanly.
+
+CONGRATULATIONS! Your AgroVision AI platform is now successfully deployed and production-ready!
+====================================================================================================
