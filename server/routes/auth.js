@@ -7,6 +7,16 @@ const { body, validationResult } = require('express-validator');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'agrovision_secret_key';
 
+const isProduction = process.env.NODE_ENV === 'production';
+const isCrossDomain = process.env.CROSS_DOMAIN === 'true';
+
+const getCookieOptions = (maxAge) => ({
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isCrossDomain ? 'none' : 'lax',
+  ...(maxAge !== undefined ? { maxAge } : {})
+});
+
 // @route   POST api/auth/register
 // @desc    Register a new farmer account
 router.post(
@@ -45,12 +55,7 @@ router.post(
       const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
       // Save token in HttpOnly Cookie
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: false, // Set to true in HTTPS production
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
+      res.cookie('token', token, getCookieOptions(7 * 24 * 60 * 60 * 1000));
 
       res.status(201).json({
         message: 'ምዝገባው በተሳካ ሁኔታ ተጠናቋል።',
@@ -99,12 +104,7 @@ router.post(
       // Set cookie duration based on rememberMe option
       const cookieAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000; // 30 days or 1 day
 
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: false, 
-        sameSite: 'lax',
-        maxAge: cookieAge
-      });
+      res.cookie('token', token, getCookieOptions(cookieAge));
 
       res.json({
         message: 'እንኳን ደህና መጡ! መግባትዎ ተረጋግጧል።',
@@ -120,7 +120,7 @@ router.post(
 // @route   POST api/auth/logout
 // @desc    Clear auth token cookies
 router.post('/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', getCookieOptions());
   res.json({ message: 'በተሳካ ሁኔታ ወጥተዋል።' });
 });
 

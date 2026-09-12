@@ -1,0 +1,8 @@
+.git
+.gitignore
+.env
+README.md
+FULL_PROJECT_DOCUMENTATION.txt
+EASY_DEPLOYMENT_GUIDE.txt
+PROJECT_OVERVIEW.txt
+gather_code.py

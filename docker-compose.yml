@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # 1. MongoDB Database Container
+  mongodb:
+    image: mongo:6.0
+    container_name: agrovision-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=agrovision
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - agrovision-network
+
+  # 2. Python FastAPI Machine Learning Microservice
+  ml_service:
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
+    container_name: agrovision-ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MIN_CONFIDENCE=0.4
+    networks:
+      - agrovision-network
+
+  # 3. Node.js Express Backend Container
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agrovision-server
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongodb:27017/agrovision
+      - JWT_SECRET=agrovision_production_secret_key_2026
+      - ML_SERVICE_URL=http://ml_service:8000/predict
+    volumes:
+      - upload_data:/app/uploads
+    depends_on:
+      - mongodb
+      - ml_service
+    networks:
+      - agrovision-network
+
+  # 4. React SPA Frontend (Nginx Alpine)
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: agrovision-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+    networks:
+      - agrovision-network
+
+# Named persistent volumes
+volumes:
+  mongo_data:
+    name: agrovision_mongo_data
+  upload_data:
+    name: agrovision_upload_data
+
+# Dedicated isolated bridge network
+networks:
+  agrovision-network:
+    name: agrovision-network
+    driver: bridge

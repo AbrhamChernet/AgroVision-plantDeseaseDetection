@@ -1,3 +1,6 @@
 ml_service/venv/
 __pycache__/
 *.pyc
+*.log
+.env
+

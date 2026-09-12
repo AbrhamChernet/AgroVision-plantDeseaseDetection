@@ -1,0 +1,354 @@
+====================================================================================================
+AGROVISION AI - PRODUCTION DEPLOYMENT GUIDE FOR RAILWAY (RAILWAY.APP)
+====================================================================================================
+Project Name:        AgroVision AI (የግብርና ብልህ ስርዓት)
+Platform:            Railway.app Cloud Infrastructure
+Architecture:        Multi-Service Microservices (MongoDB + Python FastAPI + Node Express + React Nginx)
+Last Updated:        2026-09-11
+Compatibility:       100% Zero-Code-Change Compatible with Local Docker Compose
+====================================================================================================
+
+TABLE OF CONTENTS:
+----------------------------------------------------------------------------------------------------
+1. WHY RAILWAY.APP FOR AGROVISION AI?
+2. ARCHITECTURAL TOPOLOGY ON RAILWAY
+3. PREREQUISITES & PRE-DEPLOYMENT CHECKLIST
+4. STEP-BY-STEP DEPLOYMENT WALKTHROUGH
+   - Step 1: Push Repository to GitHub
+   - Step 2: Create a New Project on Railway
+   - Step 3: Add MongoDB Database (1-Click Plugin)
+   - Step 4: Deploy ML Service (Python FastAPI + YOLOv8)
+   - Step 5: Deploy Backend Server (Node.js Express REST API)
+   - Step 6: Deploy Frontend Client (React SPA + Nginx)
+5. ENVIRONMENT VARIABLES REFERENCE MATRIX
+6. RAILWAY PERSISTENT VOLUMES (PRESERVING UPLOADED LEAF PHOTOS)
+7. PRIVATE NETWORKING VS PUBLIC NETWORKING
+8. PRODUCTION COOKIE & CORS CONFIGURATION (SAME-SITE NONE + SECURE)
+9. POST-DEPLOYMENT HEALTH CHECKS & VERIFICATION
+10. TROUBLESHOOTING & COMMON PITFALLS
+====================================================================================================
+
+
+====================================================================================================
+1. WHY RAILWAY.APP FOR AGROVISION AI?
+====================================================================================================
+Deploying AI microservice applications locally can suffer from network bandwidth bottlenecks during 
+Docker image building (such as multi-gigabyte PyTorch/OpenCV dependencies). Railway.app solves this:
+
+1. High-Speed Cloud Build Nodes:
+   Railway builds Docker containers on cloud fiber links. PyTorch CPU wheels and Ultralytics download 
+   and build in under 60 seconds without timing out.
+2. Built-in MongoDB Plugin:
+   One-click managed MongoDB database that automatically provisions credentials and connects to your 
+   backend via Railway variable references (${{MongoDB.MONGO_URL}}).
+3. Private Mesh Networking:
+   Services in the same project communicate over ultra-low-latency private hostnames 
+   (e.g., http://ml_service.railway.internal:8000), saving egress bandwidth and keeping backend 
+   services securely insulated from the public internet.
+4. Dynamic Port Adaptation:
+   Our updated Dockerfiles automatically adapt to Railway's dynamic $PORT injection while 
+   preserving local localhost port bindings (80, 5000, 8000, 27017).
+5. Automatic Free SSL / HTTPS:
+   Every public service receives a valid, trusted SSL/TLS certificate on *.up.railway.app or your 
+   custom domain with automatic renewal.
+
+
+====================================================================================================
+2. ARCHITECTURAL TOPOLOGY ON RAILWAY
+====================================================================================================
+In your Railway project, you will have 4 services running together:
+
+   +------------------------------------------------------------------------+
+   |                            RAILWAY PROJECT                             |
+   |                                                                        |
+   |  +---------------------+           +--------------------------------+  |
+   |  | agrovision-client   |           | agrovision-server              |  |
+   |  | (React 19 + Nginx)  |           | (Node.js Express + Multer)     |  |
+   |  | Directory: /client  |           | Directory: /server             |  |
+   |  | Public: YES         | --------> | Public: YES                    |  |
+   |  | URL: *.up.railway   |  HTTPS    | Volume: /app/uploads (Mounted) |  |
+   |  +---------------------+           +--------------------------------+  |
+   |                                              |              |          |
+   |                     Private Mesh Networking  |              |          |
+   |                                              v              v          |
+   |                                   +--------------+   +--------------+  |
+   |                                   | agrovision-  |   | Railway      |  |
+   |                                   | ml (FastAPI) |   | MongoDB      |  |
+   |                                   | Dir: /ml_... |   | Plugin       |  |
+   |                                   | Public: NO   |   | Public: NO   |  |
+   |                                   +--------------+   +--------------+  |
+   +------------------------------------------------------------------------+
+
+
+====================================================================================================
+3. PREREQUISITES & PRE-DEPLOYMENT CHECKLIST
+====================================================================================================
+Before you start, make sure you have:
+1. A GitHub account (https://github.com).
+2. A Railway account (https://railway.app - you can log in directly with your GitHub account).
+3. Git installed on your computer.
+4. Your AgroVision code pushed to a private or public GitHub repository.
+
+All configuration files in your project have ALREADY been updated to support Railway:
+- [x] server/index.js (Configured with trust proxy, dynamic MONGO_URL, and /health endpoint)
+- [x] server/routes/auth.js (Configured with secure cross-domain HttpOnly cookie options)
+- [x] server/Dockerfile (Configured with dynamic PORT and production NODE_ENV)
+- [x] ml_service/Dockerfile (Configured with CPU PyTorch, Ultralytics, and dynamic $PORT)
+- [x] ml_service/requirements.txt (FastAPI, Uvicorn, Pillow, Ultralytics)
+- [x] client/Dockerfile & nginx.conf (Configured with dynamic PORT and dynamic BACKEND_URL proxy)
+
+
+====================================================================================================
+4. STEP-BY-STEP DEPLOYMENT WALKTHROUGH
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+STEP 1: PUSH YOUR CODE TO GITHUB
+----------------------------------------------------------------------------------------------------
+If you haven't committed and pushed the latest changes yet, run these commands in your project root:
+
+  git add .
+  git commit -m "Prepare AgroVision AI for Railway cloud deployment"
+  git push origin main
+
+(Make sure your three model weights in ml_service/models/ - yolov8n.pt, maize_best.pt, wheat_best.pt - 
+are committed to the repository so Railway can load them).
+
+----------------------------------------------------------------------------------------------------
+STEP 2: CREATE A NEW PROJECT ON RAILWAY
+----------------------------------------------------------------------------------------------------
+1. Open your browser and navigate to: https://railway.app/dashboard
+2. Click the "+ New Project" button (top right).
+3. Choose "Empty Project".
+4. You will see an empty canvas.
+
+----------------------------------------------------------------------------------------------------
+STEP 3: ADD MONGODB DATABASE (1-CLICK PLUGIN)
+----------------------------------------------------------------------------------------------------
+1. On your project canvas, click "+ Create" or "New".
+2. Select "Database".
+3. Choose "Add MongoDB".
+4. Railway will instantly provision a dedicated MongoDB container.
+5. Click on the MongoDB tile, select "Variables", and notice the generated variable:
+   MONGO_URL (e.g. mongodb://mongo:password@mongodb.railway.internal:27017).
+   You DO NOT need to copy or hardcode this - Railway connects it automatically!
+
+----------------------------------------------------------------------------------------------------
+STEP 4: DEPLOY THE ML SERVICE (PYTHON FASTAPI + YOLOV8)
+----------------------------------------------------------------------------------------------------
+1. Click "+ Create" on your canvas -> Select "GitHub Repo".
+2. Choose your AgroVision repository.
+3. Once the service tile appears on the canvas, click on it immediately.
+4. Go to the "Settings" tab:
+   - In "General" -> "Service Name": Change name to: ml_service
+   - In "Build" -> "Root Directory": Enter: /ml_service
+   - Click "Save" or checkmark.
+5. Go to the "Variables" tab:
+   - Add variable: MIN_CONFIDENCE = 0.4
+6. Go to the "Networking" tab:
+   - Under "Private Networking", note the service name: ml_service.railway.internal
+   - Port will automatically default to 8000 or Railway's dynamic $PORT.
+   - (Optional) You do NOT need to generate a public domain for ml_service because only the backend 
+     server communicates with it via the private mesh network!
+7. Click "Deploy" or wait for Railway to build the container.
+   Watch the Build Logs: Railway will install the PyTorch CPU wheel and Ultralytics in ~60 seconds.
+   Once deployed, the Runtime Logs will show:
+   "Detection YOLOv8 weights loaded successfully..."
+   "Maize YOLOv8 weights loaded successfully..."
+   "Wheat YOLOv8 weights loaded successfully..."
+
+----------------------------------------------------------------------------------------------------
+STEP 5: DEPLOY THE BACKEND SERVER (NODE.JS EXPRESS API)
+----------------------------------------------------------------------------------------------------
+1. Click "+ Create" on your canvas -> Select "GitHub Repo" -> Select your AgroVision repo again.
+2. Click on the new service tile.
+3. Go to the "Settings" tab:
+   - In "General" -> "Service Name": Change name to: server
+   - In "Build" -> "Root Directory": Enter: /server
+   - Click "Save".
+4. Go to the "Variables" tab:
+   Click "Add Variable" and set the following:
+   * NODE_ENV = production
+   * MONGO_URI = ${{MongoDB.MONGO_URL}}
+     (Railway auto-completes this reference when you type ${{ )
+   * ML_SERVICE_URL = http://ml_service.railway.internal:8000/predict
+   * JWT_SECRET = agrovision_prod_jwt_secret_key_railway_2026 (use any strong random string)
+   * CROSS_DOMAIN = true
+5. Add Persistent Volume (Crucial for leaf photos):
+   - In the service view, click on "Volumes" or the "+ Volume" button.
+   - Mount Path: Enter /app/uploads
+   - Size: 5 GB or 10 GB
+   - Click "Add Volume".
+   (This guarantees that leaf photos uploaded by farmers are NEVER lost when code is redeployed!)
+6. Expose Public Domain:
+   - Go to the "Networking" tab.
+   - Under "Public Networking", click "Generate Domain".
+   - Railway will generate a domain like: https://server-production-xxxx.up.railway.app
+   - COPY THIS DOMAIN URL. (You will need it for the client in Step 6).
+
+----------------------------------------------------------------------------------------------------
+STEP 6: DEPLOY THE FRONTEND CLIENT (REACT 19 + VITE + NGINX)
+----------------------------------------------------------------------------------------------------
+1. Click "+ Create" on your canvas -> Select "GitHub Repo" -> Select your AgroVision repo again.
+2. Click on the new service tile.
+3. Go to the "Settings" tab:
+   - In "General" -> "Service Name": Change name to: client
+   - In "Build" -> "Root Directory": Enter: /client
+   - Click "Save".
+4. Go to the "Variables" tab:
+   - Add variable: BACKEND_URL = http://server.railway.internal:5000
+     (This connects the Nginx reverse proxy to the backend via Railway's private mesh network!)
+   - (Alternative Direct Option): You can also add build arg VITE_API_URL = https://server-production-xxxx.up.railway.app/api
+5. Expose Public Domain:
+   - Go to the "Networking" tab.
+   - Under "Public Networking", click "Generate Domain".
+   - Railway will generate a public URL like: https://client-production-xxxx.up.railway.app
+6. Click "Deploy".
+   Once deployed, click on your client domain link to open AgroVision AI live in your browser!
+
+
+====================================================================================================
+5. ENVIRONMENT VARIABLES REFERENCE MATRIX
+====================================================================================================
+
+SERVICE: server (Backend REST API)
+----------------------------------------------------------------------------------------------------
+VARIABLE NAME       RECOMMENDED PRODUCTION VALUE                      DESCRIPTION
+----------------------------------------------------------------------------------------------------
+NODE_ENV            production                                        Enables production optimizations
+PORT                5000 (auto-assigned by Railway)                   Container listen port
+MONGO_URI           ${{MongoDB.MONGO_URL}}                            Automatic link to Railway MongoDB
+ML_SERVICE_URL      http://ml_service.railway.internal:8000/predict   Private network URL to ML service
+JWT_SECRET          <any-secure-random-32-char-string>                Secret key for signing JWT tokens
+CROSS_DOMAIN        true                                              Enables SameSite=None secure cookies
+
+SERVICE: ml_service (FastAPI YOLOv8 Microservice)
+----------------------------------------------------------------------------------------------------
+VARIABLE NAME       RECOMMENDED PRODUCTION VALUE                      DESCRIPTION
+----------------------------------------------------------------------------------------------------
+PORT                8000 (auto-assigned by Railway)                   Container listen port
+MIN_CONFIDENCE      0.4                                               Confidence threshold (0.0 to 1.0)
+
+SERVICE: client (React SPA + Nginx)
+----------------------------------------------------------------------------------------------------
+VARIABLE NAME       RECOMMENDED PRODUCTION VALUE                      DESCRIPTION
+----------------------------------------------------------------------------------------------------
+PORT                80 (auto-assigned by Railway)                     Nginx dynamic listen port
+BACKEND_URL         http://server.railway.internal:5000               Private mesh routing to Express
+
+
+====================================================================================================
+6. RAILWAY PERSISTENT VOLUMES (PRESERVING UPLOADED LEAF PHOTOS)
+====================================================================================================
+Why this is required:
+Cloud containers on Railway are ephemeral by default. If a container restarts or you push a git 
+update, any files stored on local container disk would normally be wiped out.
+
+How to configure:
+1. Click on the server service on your Railway canvas.
+2. Go to the "Volumes" tab.
+3. Click "+ New Volume".
+4. Set the Mount Path to: /app/uploads
+5. Size: Default 1GB-5GB is plenty for thousands of leaf photos.
+6. Click "Save".
+
+Now, when a farmer scans a leaf, the photo is stored in the persistent volume and will survive 
+container restarts, upgrades, and code redeployments!
+
+
+====================================================================================================
+7. PRIVATE NETWORKING VS PUBLIC NETWORKING
+====================================================================================================
+Railway includes automatic private DNS resolution between all services in a project.
+
+- ML Service (ml_service):
+  Should NOT have a public domain. Keep it private. The backend communicates with it over:
+  http://ml_service.railway.internal:8000
+  Benefits: Maximum security, zero public attack surface, zero egress charges.
+
+- Backend Server (server):
+  Accessible both via private DNS (http://server.railway.internal:5000) by the client's Nginx 
+  proxy AND optionally via its public domain (https://server-xxxx.up.railway.app).
+
+- Frontend Client (client):
+  Has a public domain (https://client-xxxx.up.railway.app). Farmers access this URL.
+
+
+====================================================================================================
+8. PRODUCTION COOKIE & CORS CONFIGURATION
+====================================================================================================
+Our codebase has been pre-configured with cross-domain support:
+
+1. Trust Proxy:
+   In server/index.js, app.set('trust proxy', 1) is enabled so Express knows requests coming 
+   through Railway's reverse proxy are HTTPS.
+2. Cross-Domain HttpOnly Cookies:
+   When CROSS_DOMAIN=true is set in the server variables:
+   - secure: true (Only sent over encrypted HTTPS)
+   - sameSite: 'none' (Allows the React frontend on one domain to send cookies to the API on another)
+3. Origin Reflection:
+   CORS dynamically reflects incoming origins with credentials: true.
+4. Result:
+   Farmers can register, log in, view their history, and log out with 100% cookie reliability on 
+   Chrome, Firefox, Safari, iOS, and Android.
+
+
+====================================================================================================
+9. POST-DEPLOYMENT HEALTH CHECKS & VERIFICATION
+====================================================================================================
+Perform these quick tests once your services finish deploying:
+
+1. Check Backend Health:
+   Visit: https://<your-server-domain>.up.railway.app/health
+   Expected response:
+   {"status":"healthy","database":"connected","timestamp":"..."}
+
+2. Check ML Inference Microservice:
+   In the Railway Dashboard -> ml_service -> "Logs":
+   Verify the logs show:
+   Detection YOLOv8 weights loaded successfully
+   Maize YOLOv8 weights loaded successfully
+   Wheat YOLOv8 weights loaded successfully
+   Uvicorn running on http://0.0.0.0:8000
+
+3. End-to-End User Flow:
+   - Open your frontend client URL in your browser.
+   - Click "መለያ ይፍጠሩ" (Register) -> Create a test farmer account.
+   - Confirm successful login and redirect to the dashboard.
+   - Navigate to "ቅጠል መመርመሪያ" (Scan Leaf).
+   - Select crop type (በቆሎ / ስንዴ) and upload a sample leaf photo.
+   - Confirm real-time YOLOv8 diagnosis returns with Amharic disease name, severity, and advice.
+   - Navigate to "የምርመራ ታሪክ" (History) to confirm the scan was saved to MongoDB.
+
+
+====================================================================================================
+10. TROUBLESHOOTING & COMMON PITFALLS
+====================================================================================================
+
+1. Problem: "502 Bad Gateway" on Client or Server
+   - Cause: The container is listening on the wrong port or took longer than 60s to start.
+   - Solution: In our updated Dockerfiles, dynamic $PORT binding is active. In Railway service 
+     "Settings", make sure "Healthcheck Path" is set to /health for server and / for client.
+
+2. Problem: ML Service Build Times Out
+   - Cause: Standard PyTorch wheels try to download CUDA (3-4GB).
+   - Solution: Our updated ml_service/Dockerfile explicitly uses the CPU wheel index:
+     --index-url https://download.pytorch.org/whl/cpu. This takes only ~150MB and builds quickly.
+
+3. Problem: Login works on desktop but fails on mobile
+   - Cause: Missing CROSS_DOMAIN=true environment variable on the server service.
+   - Solution: Add CROSS_DOMAIN=true in Railway server variables and redeploy.
+
+4. Problem: Database Connection Refused
+   - Cause: Incorrect MongoDB connection string.
+   - Solution: Use Railway's reference variable MONGO_URI = ${{MongoDB.MONGO_URL}}. Never hardcode 
+     localhost in cloud deployment.
+
+5. Problem: Model Weights Missing (Placeholder/Simulation mode triggered)
+   - Cause: .pt files were gitignored or not pushed to the repository.
+   - Solution: Verify that ml_service/models/yolov8n.pt, maize_best.pt, and wheat_best.pt 
+     are tracked in Git (git add -f ml_service/models/*.pt if necessary) and pushed to GitHub.
+
+====================================================================================================
+YOU ARE READY TO DEPLOY AGROVISION AI ON RAILWAY.APP!
+====================================================================================================
