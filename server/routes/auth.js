@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
@@ -35,6 +36,12 @@ router.post(
     const { name, phone, password, profilePhoto } = req.body;
 
     try {
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+          message: 'የዳታቤዝ ግንኙነት አልተገኘም። እባክዎ በVercel ላይ MONGO_URI እና የMongoDB Atlas IP Whitelist (0.0.0.0/0) ያረጋግጡ። (Database disconnected. Please check MONGO_URI in Vercel and MongoDB Atlas IP access 0.0.0.0/0).'
+        });
+      }
+
       let user = await User.findOne({ phone });
       if (user) {
         return res.status(400).json({ message: 'በዚህ ስልክ ቁጥር ቀድሞ የተመዘገበ አካውንት አለ።' });
@@ -63,7 +70,11 @@ router.post(
       });
     } catch (err) {
       console.error('Register error:', err.message);
-      res.status(500).json({ message: 'ምዝገባው አልተሳካም። እባክዎ እንደገና ይሞክሩ።' });
+      const isDbErr = err.name === 'MongooseError' || err.name === 'MongoServerSelectionError' || (err.message && err.message.includes('buffering timed out'));
+      const errorMsg = isDbErr 
+        ? 'የዳታቤዝ ግንኙነት አልተሳካም። እባክዎ MongoDB Atlas ቅንብሮችን ያረጋግጡ። (' + err.message + ')'
+        : 'ምዝገባው አልተሳካም። እባክዎ እንደገና ይሞክሩ። (' + err.message + ')';
+      res.status(500).json({ message: errorMsg });
     }
   }
 );
@@ -85,6 +96,12 @@ router.post(
     const { phone, password, rememberMe } = req.body;
 
     try {
+      if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({
+          message: 'የዳታቤዝ ግንኙነት አልተገኘም። እባክዎ በVercel ላይ MONGO_URI እና የMongoDB Atlas IP Whitelist (0.0.0.0/0) ያረጋግጡ። (Database disconnected. Please check MONGO_URI in Vercel and MongoDB Atlas IP access 0.0.0.0/0).'
+        });
+      }
+
       const user = await User.findOne({ phone });
       if (!user) {
         return res.status(400).json({ message: 'ስልክ ቁጥር ወይም የይለፍ ቃል አልተዛመደም።' });
@@ -112,7 +129,11 @@ router.post(
       });
     } catch (err) {
       console.error('Login error:', err.message);
-      res.status(500).json({ message: 'መግባት አልተሳካም። እባክዎ እንደገና ይሞክሩ።' });
+      const isDbErr = err.name === 'MongooseError' || err.name === 'MongoServerSelectionError' || (err.message && err.message.includes('buffering timed out'));
+      const errorMsg = isDbErr 
+        ? 'የዳታቤዝ ግንኙነት አልተሳካም። እባክዎ MongoDB Atlas ቅንብሮችን ያረጋግጡ። (' + err.message + ')'
+        : 'መግባት አልተሳካም። እባክዎ እንደገና ይሞክሩ። (' + err.message + ')';
+      res.status(500).json({ message: errorMsg });
     }
   }
 );

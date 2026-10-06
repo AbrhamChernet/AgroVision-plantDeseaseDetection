@@ -628,6 +628,7 @@ agrovision-ai/
 │   ├── nginx.conf                         [Nginx SPA routing, reverse proxy for /api & /uploads]
 │   ├── index.html                         [HTML template with localized title tag]
 │   ├── package.json                       [Client npm dependencies & scripts]
+│   ├── README.md                          [Dedicated React 19 frontend documentation]
 │   └── vite.config.js                     [Vite plugins and bundler configuration]
 ├── server/                                [Node.js Express Backend Container]
 │   ├── middleware/
@@ -646,7 +647,8 @@ agrovision-ai/
 │   ├── .dockerignore                      [Excludes node_modules, uploads, .env from server image]
 │   ├── Dockerfile                         [Node 20 Alpine production container]
 │   ├── index.js                           [Express server entry, CORS & MongoDB connection]
-│   └── package.json                       [Server npm dependencies & dev scripts]
+│   ├── package.json                       [Server npm dependencies & dev scripts]
+│   └── README.md                          [Dedicated Express backend documentation]
 ├── ml_service/                            [Python FastAPI Microservice Container]
 │   ├── models/
 │   │   ├── maize_best.pt                  [Trained PyTorch weights for Maize classification]
@@ -654,13 +656,20 @@ agrovision-ai/
 │   ├── .dockerignore                      [Excludes __pycache__, venv, .env from ML image]
 │   ├── Dockerfile                         [Python 3.10 slim, libgl1, CPU PyTorch wheel, Uvicorn]
 │   ├── main.py                            [FastAPI app, YOLO inference & fallback simulation]
-│   └── requirements.txt                   [Python dependencies: fastapi, torch, ultralytics]
+│   ├── requirements.txt                   [Python dependencies: fastapi, torch, ultralytics]
+│   └── README.md                          [Dedicated ML microservice & YOLOv8 documentation]
 ├── .dockerignore                          [Root Docker ignore patterns]
 ├── .env                                   [Master environment configuration]
 ├── docker-compose.yml                     [Master Docker Compose orchestrating all 4 containers]
+├── README.md                              [Primary project documentation & architecture guide]
+├── FULL_PROJECT_DOCUMENTATION.md          [Complete technical manual & 18 defense Q&As in Markdown]
+├── FULL_PROJECT_DOCUMENTATION.txt         [Complete technical manual & 18 defense Q&As in Plaintext]
+├── PROJECT_OVERVIEW.md                    # Detailed architectural and operational guide (Markdown)
+├── PROJECT_OVERVIEW.txt                   [High-level architecture & model update walkthrough]
 ├── DOCKER_DEPLOYMENT_INSTRUCTIONS.txt     [Quick-start single-command Docker deployment reference]
 ├── EASY_DEPLOYMENT_GUIDE.txt              [Comprehensive deployment guide (Docker, PaaS, VPS)]
-└── FULL_PROJECT_DOCUMENTATION.txt         [Complete master documentation & defense guide]
+├── RAILWAY_DEPLOYMENT_GUIDE.txt           [Railway container deployment guide]
+└── VERCEL_DEPLOYMENT_GUIDE.txt            [Serverless zero-cost Vercel deployment guide]
 
 
 ====================================================================================================
